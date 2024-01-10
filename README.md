@@ -1,6 +1,6 @@
 # RNA-Seq_ArabidopsisThaliana
 
-In this directory I develop an RNA-Seq Analysis form the organism Arabidopsis thaliana, using Sequence Read Archive (SRA) raw RNA-Seq data from NCBI. 
+In this directory I develop an RNA-Seq Analysis from the organism Arabidopsis thaliana, using Sequence Read Archive (SRA) raw RNA-Seq data from NCBI. 
 
 The project includes:
 
