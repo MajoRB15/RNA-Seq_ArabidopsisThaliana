@@ -1,0 +1,795 @@
+---
+title: "RNASeq Project"
+author: "Maria Fernanda Garcia, Maria Fernanda Requena and Maria Jose Rodriguez"
+date: "2023-03-11"
+output: rmdformats::readthedown
+---
+
+# Bioproject description
+
+-   **BioProject:** [PRJNA256121](https://www.ncbi.nlm.nih.gov/bioproject/PRJNA256121)
+
+-   **Libraries type:** *Single-end*
+
+-   **Species:** *Arabidopsis thaliana*
+
+-   **Number of transcriptomes:** 6 transcriptomes
+
+-   **Number of biological replicas:** 3 replicas
+
+-   **Selection method:** unspecified
+
+-   **Instrument:** Illumina Genome Analyzer II
+
+-   **Samples distribution:**
+
+    -   Control samples - SRR1524935 (sample 1), SRR1524938 (sample 2) y SRR1524940 (sample 3).\
+    -   Iron-deficiency - SRR1524941 (sample 1), SRR1524945 (sample 2) y SRR1524946 (sample 3).
+
+## Abstract
+
+From the organism Arabidopsis thaliana, we are comparing six transcriptome samples, half established as control with others subjected to an iron-deficient environment. Sequence Read Archive (SRA) raw RNA-Seq data from NCBI is being used, first analyzing their quality with FastQC and MultiQC in order to realize a pseudoalignment with the program Kallisto. Subsequently the aligned data was processed with RStudio to get the differential expression for all the transcriptomes. For the iron deficiency data we obtained that most of the genes expressed in high quantities are related to metabolic pathways, catalytic reactions (because of the caused lack of energy) and that this Fe deficiency may be related to differences in gene expression.
+
+# Quality Lectures Analysis and Adapters Removal
+
+## 1) Raw Data Download and Manipulation
+
+### Commands
+
+    qlogin
+    cd /mnt/Timina/bioinfoII/rnaseq/BioProject_2023/rawData
+    ls
+
+We copied the SRAData_dow.sh y SRA_run.sge files from the *rawdata* directory to *Athaliana_Fe_def* (our project).
+
+### Commands
+
+    /mnt/Timina/bioinfoII/rnaseq/BioProject_2023/rawData
+    cp SRAData_dow.sh  Athaliana_Fe_def
+    cp SRA_run.sge Athaliana_Fe_def
+
+Afterwards, we edited the txt file of our folder in order to add each SRA missing of our bioProject. [NCBI](https://www.ncbi.nlm.nih.gov/sra?linkname=bioproject_sra_all&from_uid=256121)
+
+**Athaliana_fastq.txt :**
+
+    SRR1524946
+    SRR1524938
+    SRR1524945
+    SRR1524941
+    SRR1524940
+    SRR1524935
+
+With all of the SRA names we can use SRA_At_dow.sh file to access to the txt file and download the SRA's needed from the NCBI url (same url as above).
+
+**SRA_At_dow.sh file and job :**
+
+    # Data download
+    # PART 1.- Download SRA
+    # PART 2.- Converting SRA to Fastq
+    # USAGE= ./SRAData_dow.sh
+    # sed -i 's/\r//' SRAData_dow.sh
+
+    # AUTHOR: Maria Fernanda Garcia, Maria Fernanda Requena and Maria Jose Rodriguez
+
+    # PART 1.- Download SRA
+    prefetch --option-file ./Athaliana_fastq.txt -O ./data
+
+    # PART 2.- Converting SRA to Fastq
+    fastq-dump --gzip --skip-technical --dumpbase --split-3 --clip --outdir ./data/ ./data/SRR*/*.sra
+
+A .sge was used to link both files (Athaliana_fastq.txt and SRA_At_dow.sh)
+
+**SRA_run.sge**
+
+    #!/bin/bash
+    #
+    # Use Current working directory
+    #$ -cwd
+    #
+    # Join stdout and stderr
+    #$ -j n
+    #
+    # Run job through bash shell
+    #$ -S /bin/bash
+    #
+    # You can edit the script since this line
+    #
+    # Your job name
+    #$ -N AtRawData
+    #
+    # Send an email after the job has finished
+    #$ -m e
+    #$ -M ****@gmail.com
+    #
+    #
+    # If modules are needed, source modules environment (Do not delete the next line):
+    . /etc/profile.d/modules.sh
+    #
+    # Add any modules you might require:
+    module load sra/3.0.0
+    #
+    # Write your commands in the next line
+    ./SRA_At_dow.sh
+
+## 2) Raw Data Quality Analysis, Adapters Removal and Quality Analysis of Lectures Without Adapters.
+
+The quality analysis was done in a job with the following steps of the Adapters removal.
+
+**Trimmed_run.sge file and Job**
+
+    #!/bin/bash
+    #
+    # Use Current working directory
+    #$ -cwd
+    #
+    # Join stdout and stderr
+    #$ -j n
+    #
+    # Run job through bash shell
+    #$ -S /bin/bash
+    #
+    # Your job name
+    #$ -N Trimmed_SRA_Athaliana_Fe
+    #
+    # Send an email after the job has finished
+    #$ -m e
+    #$ -M ****@gmail.com
+    #
+    #
+    # If modules are needed, source modules environment (Do not delete the next line):
+    . /etc/profile.d/modules.sh
+    #
+    # Add any modules you might require:
+    module load fastqc/0.11.3
+    module load multiqc/1.5
+    module load trimmomatic/0.33
+    #
+    #
+    # PART 1.- FastQC & multiQC Analysis
+    fastqc ./data/*.fastq.gz -o ./FastQC_rawData
+    multiqc ./FastQC_rawData -o ./FastQC_rawData
+
+    # PART 2.- Adapters Removal;
+    # single-end
+    cd data
+    for i in *.fastq.gz;
+    do echo
+    trimmomatic SE -threads 2 -phred33 $i ../data_trimmed/"${i%.fastq}_trimmed.fastq.gz" ILLUMINACLIP:../TruSeq-SE.fa:2:30:10 LEADING:3 TRAILING:3 SLIDINGWINDOW:4:20 MINLEN:35
+    done
+
+    # PART 3.- FastQC & multiQC
+    cd ../
+    fastqc ./data_trimmed/*.fastq.gz -o ./FastQC_trimmed
+    # Reporte en MultiQC
+    multiqc ./FastQC_trimmed -o ./FastQC_trimmed
+
+**Explanation**
+
+Part 1
+
+*fastqc ./data/*.fastq.gz -o ./FastQC_rawData\* and *multiqc ./FastQC_rawData -o ./FastQC_rawData* commands were used for the quality analysis generation with fastqc and multiqc modules and the results were dropped in the rawData folder.
+
+Part 2
+
+-   Remove adapters (ILLUMINACLIP:TruSeq3-PE.fa:2:30:10)
+
+-   Remove leading low quality or N bases (below quality 3) (LEADING:3)
+
+-   Remove trailing low quality or N bases (below quality 3) (TRAILING:3)
+
+-   Scan the read with a 4-base wide sliding window, cutting when the average quality per base drops below 15 (SLIDINGWINDOW:4:15)
+
+-   Drop reads below the 36 bases long (MINLEN:36)
+
+-   TruSeq-SE.fa:2:30:10 -\> Adapters removal
+
+-   LEADING:3 -\> Remove leading low quality below 3
+
+-   TRAILING:3 -\> Remove trailing low quality below 3
+
+-   SLIDINGWINDOW:4:20 -\> It moves every 4 bases and looks until find a quiality minor than 20 where it cuts and stays with the traveled sequenced (with quality bigger than 20)
+
+-   MINLEN:35 Remove reads below 36 bases long
+
+Part 3
+
+The quality analysis of the lectures without adapters was done with fastqc and multiqc. The results were dropped in the FastQC_trimmed folder.
+
+**Result**
+
+Part 1
+
+    multiqc_data            
+    multiqc_report.html
+    SRR1524935_fastqc.zip
+    SRR1524938_fastqc.html
+    SRR1524938_fastqc.zip
+    SRR1524940_fastqc.html
+    SRR1524940_fastqc.zip
+    SRR1524941_fastqc.html
+    SRR1524941_fastqc.zip
+    SRR1524945_fastqc.html
+    SRR1524945_fastqc.zip
+    SRR1524946_fastqc.html
+    SRR1524946_fastqc.zip
+
+These results were dropped in */mnt/Timina/bioinfoII/rnaseq/BioProject_2023/rawData/Athaliana_Fe_def/FastQC_rawData* directory.
+
+**Results**
+
+## Raw Data Quality Analysis
+
+```{r echo = FALSE}
+
+knitr::include_graphics("raw_data.png")
+```
+
+*(Fig 1.0)*
+
+```{r echo = FALSE}
+
+knitr::include_graphics("rawdata2.png")
+```
+
+*(Fig 1.1)*
+
+Using multiqc we analized the quality of all the SRA raw data, the mean quality per base, quality per sequence and the N content passed the six filters keeping the scores analyzed in the green zone which is reliable. The CG content presents satisfactorily a normal distribution in addition to the fact that the contamination of adapters is low so we can work well with the data; however, we found unfavorable results in the levels of duplication of the sequences, since the scores are equal to or greater than 50 percent. This problem with duplications may indicate some kind of enrichment bias which can lead us to biased results so the information obtained will not be 100 percent reliable.
+
+## Quality Analysis of Lectures Without Adapters.
+
+After trimming, we analyzed again the quality of the data, in Sequence Quality Histograms, Per Sequence Quality Scores, Per Sequence GC Content, Per Base N Content, Overrepresented sequences and Adapter Content the 6 samples passed without warnings. We obtained not good results in Per Base Sequence Content, this may indicate biases at the start of the reads; In Sequence Length Distribution and Sequence Duplication Levels we obtained warnings, but they don't look as problematic as in raw data.
+
+```{r echo = FALSE}
+knitr::include_graphics("trimmed.png")
+```
+
+*(Fig 2.0)*
+
+```{r echo = FALSE}
+knitr::include_graphics("trimmed2.png")
+```
+
+*(Fig 2.1)*
+
+## 3) Files Download
+
+    rsync -rptuvl user@dna.lavis.unam.mx:/mnt/Timina/bioinfoII/rnaseq/BioProject_2023/rawData/Athaliana_Fe_def/FastQC_trimmed/multiqc_report.html .
+
+# Reference Transcriptome assembly with Kallisto
+
+**Commands**
+
+    #Copy the reference transcriptome *At_stringm_seq_v2.fasta * to *kallisto_quant* directory.
+    cd /mnt/Timina/bioinfoII/rnaseq/BioProject_2023/rawData
+    cp At_stringm_seq_v2.fasta /mnt/Timina/bioinfoII/rnaseq/BioProject_2023/rawData/Athaliana_Fe_def/kallisto_quant
+
+## Pseudoalingnment with Kallisto
+
+**Kallisto_AF.sge file and job**
+
+    #!/bin/bash
+    #
+    # Use Current working directory
+    #$ -cwd
+    #
+    # Join stdout and stderr
+    #$ -j n
+    #
+    # Run job through bash shell
+    #$ -S /bin/bash
+    #
+    # You can edit the script since this line
+    #
+    # Your job name
+    #$ -N Kallisto_AF
+    #
+    # Send an email after the job has finished
+    #$ -m e
+    #$ -M ****@gmail.com
+    #
+    #
+    # If modules are needed, source modules environment (Do not delete the next line):
+    . /etc/profile.d/modules.sh
+    #
+    # Add any modules you might require:
+    module load kallisto/0.45.0
+    #
+    # Write your commands in the next line
+
+    # Generate kallisto index
+    #kallisto index -i ./kallisto_quant/At_ref.kidx At_stringm_seq_v2.fasta
+
+    # - i output file name, i.e., index
+    #- Input =  At_stringm_seq_v2.fasta, reference transcriptome
+
+    # Pseudo Alignment
+    # Single-end
+    for file in ./data_trimmed/*trimmed.fastq.gz
+    do
+      clean=$(echo $file | sed 's/^.\{15\}//g;s/_trimmed//;s/\.fastq\.gz//;s/\.fastq\.gz//')   # Output directory name, same name from SRA
+      kallisto quant --index ./kallisto_quant/At_ref.kidx --output-dir ./kallisto_quant/${clean} --single -l 200 -s 20 --threads=12 $file
+    done
+
+**Explanation** With *kallisto index -i* the index is created for the reference transcriptome, this will be the input for the pseudoalignment.
+
+-   -l 200 → Estimated average
+
+-   -s 20
+
+-   --threads=12
+
+-l, --fragment-length=DOUBLE Estimated average fragment length
+
+-s, --sd=DOUBLE Estimated standard deviation of fragment length. (default: -l, -s values are estimated from paired end data, but are required when using --single)
+
+-t, --threads=INT Number of threads to use (default: 1)
+
+## Download data
+
+    rsync -rptuvl user@dna.liigh.unam.mx:/mnt/Timina/bioinfoII/rnaseq/BioProject_2023/rawData/Athaliana_Fe_def/kallisto_quant/SRR* . 
+
+# Differential expression with DESeq2 in R
+
+Libraries needed recommended version R 2.2
+
+```{r echo=T, results='hide', warning=FALSE, error=FALSE, message=FALSE}
+library(tximport)
+library(tidyverse)
+library(DESeq2)
+library(ggplot2)
+library(ggrepel) # avoids text overlap in labels
+
+```
+
+## Import data from Kallisto to R
+
+```{r Import data, results='hide', warning=FALSE, error=FALSE, message=FALSE}
+# Select your working directory
+# Create metadata table
+At_metadata.tsv <- data.frame("SRA" =c("SRR1524935","SRR1524938", "SRR1524940", "SRR1524941", "SRR1524945", "SRR1524946"), "sample" = c("control_s1","control_s2","control_s3", "Fe_def_1", "Fe_der_2", "Fe_def_3") , "dex" = c(rep("control",3), rep("Fe_def",3)), "species" = "Arabidopsis_thaliana")
+
+# Load files by file name 
+At_samples <- At_metadata.tsv
+At_files   <- file.path("./", At_samples$SRA,"abundance.tsv")
+names(At_files) <- At_samples$SRA
+
+# Load the file .csv from the example directory 
+At_tx2gene   <- read.csv("At_all_genes_tx2gene.csv", sep=",",header=TRUE) 
+#tr2gn <- data.frame("gene_id"= tx2gene$geneID, "transcript_id" = tx2gene$transcriptID)
+At_txi_kallisto <- tximport(At_files, type = "kallisto", tx2gene=At_tx2gene)
+# Default = txIn = TRUE, txOut = FALSE, countsFromAbundance = "no"
+
+# Transcriptomes names 
+rownames(At_samples) <- At_samples$sample
+colnames(At_txi_kallisto$counts) <-rownames(At_samples) 
+
+# What is in the file?
+# names(At_txi_kallisto)
+# [1] "abundance"           "counts"              "length"              "countsFromAbundance"
+
+# Import data as an object that can be read by Deseq.
+At_ddsTxi_all       <- DESeqDataSetFromTximport(At_txi_kallisto, At_samples, design = ~ dex) # Create a DESeq object from the tximport data
+
+# Prefiltering, deletion of genes with low counts
+keep                <- rowSums(counts(At_ddsTxi_all)) >= 10
+At_ddsTxi_all       <- At_ddsTxi_all[keep,] 
+At_dds_all          <- DESeq(At_ddsTxi_all) # run Differential expression analysis 
+
+
+```
+
+## Normalized counts for graphs (rlog)
+
+```{r Normalized data }
+At_all_normalized <- rlog(At_dds_all, blind=FALSE) # result rld, vst
+At_all_normalized_db <- as.data.frame(assay(At_all_normalized))
+head(At_all_normalized_db)
+```
+
+### PCA graph
+
+```{r PCA graph }
+plotPCA(At_all_normalized, intgroup=c("dex"))
+```
+
+As we can see in the PC analysis the samples are clustered within their categories, it also indicates that the highest variance designates to be the iron deficiency samples (PC1). This makes sense with the idea that iron deficiency has an impact in gene expression.
+
+## Differential expression (All the transcriptomes)
+
+```{r Differential expression DEG files}
+At_res_all                              <- results(At_dds_all)  # Save the results
+mcols(At_res_all)$description # contraste shoot vs root
+#https://github.com/COMBINE-lab/salmon/issues/581
+
+# Extract UP
+At_all_de_gene_matrix_UP  <- subset(At_res_all, padj < 0.05 & log2FoldChange >= 0.5)
+write.table(At_all_de_gene_matrix_UP,file ="./At_all_DEG_kallisto_Fe.tsv", quote=FALSE, sep="\t")
+# Extract names
+At_all_de_gene_names_UP <- rownames(At_all_de_gene_matrix_UP)
+
+# Extract down genes
+At_all_de_gene_matrix_DOWN  <- subset(At_res_all, padj < 0.05 & log2FoldChange <= -0.5)
+write.table(At_all_de_gene_matrix_DOWN,file ="./At_all_DEG_kallisto_Control.tsv", quote=FALSE, sep="\t")
+# Extract names
+At_all_de_gene_names_DOWN <- rownames(At_all_de_gene_matrix_DOWN)
+
+# Number of genes expressed 
+length(At_all_de_gene_names_UP)
+length(At_all_de_gene_names_DOWN)
+
+```
+
+We upload the resulting files from the differential expression to our project directory in the cluster.
+
+    # First create a directory to store the files 
+    mkdir DEG_results 
+
+    # Upload Fe deficiency results
+    rsync -av ./At_all_DEG_kallisto_Fe.tsv mgarcia@dna.liigh.unam.mx:/mnt/Timina/bioinfoII/rnaseq/BioProject_2023/rawData/Athaliana_Fe_def/DEG_results
+
+    # Upload Control results
+    rsync -av ./At_all_DEG_kallisto_Control.tsv mgarcia@dna.liigh.unam.mx:/mnt/Timina/bioinfoII/rnaseq/BioProject_2023/rawData/Athaliana_Fe_def/DEG_results
+
+### Volcano plot
+
+```{r Volcano plot }
+At_de <- as.data.frame(At_res_all)
+# add a column of NAs
+At_de$diffexpressed <- "NO"
+
+# if log2Foldchange > 0.6 and pvalue < 0.05, set as "UP" 
+At_de$diffexpressed[At_de$log2FoldChange > 0.6 & At_de$pvalue < 0.05] <- "UP"
+# if log2Foldchange < -0.6 and pvalue < 0.05, set as "DOWN"
+At_de$diffexpressed[At_de$log2FoldChange < -0.6 & At_de$pvalue < 0.05] <- "DOWN"
+# Create a new column "names" to de, that will contain the name of a subset if genes differentially expressed (NA in case they are not)
+At_de$names <- NA
+# filter for a subset of interesting genes
+filter <- which(At_de$diffexpressed != "NO" & At_de$padj < 0.05 & (At_de$log2FoldChange >= 5  | At_de$log2FoldChange <= -5))
+At_de$names[filter] <- rownames(At_de)[filter]
+
+# plot
+png(file = "volcano05.png",
+    width = 800, height = 800) # save the plot in png
+ggplot(data=At_de, aes(x=log2FoldChange, y=-log10(pvalue), col=diffexpressed, label=names)) +
+  geom_point() +
+  scale_color_manual(values=c("blue", "black", "red")) + # cambiar colores de puntos
+  theme_minimal() +
+  geom_text_repel() +
+  xlim(-15,15)
+
+dev.off()
+
+```
+
+### Heatmap
+
+```{r Heatmap }
+library("pheatmap")
+# first 20 genes
+select <- order(rowMeans(counts(At_dds_all,normalized=TRUE)),
+                decreasing=TRUE)[1:20]
+df <- as.data.frame(colData(At_dds_all)[,c("dex", "sample")])
+
+
+#heatmap
+pheatmap(assay(At_all_normalized)[select,], cluster_rows=FALSE, show_rownames=TRUE,
+         cluster_cols=TRUE, annotation_col=df)
+
+```
+
+In this heatmap we can visualize a cluster image on the top in which is notorious a clustering behaviour between the same control samples and the same iron deficiency samples. This can give us an idea that iron deficiency has actually an effect in the regulation of gene activity. In the same way, we can observe in the iron deficiency that the expression of some genes are higher than in the control samples (AT4G30190,AT2G36530).
+
+## GO terms analysis
+
+### Ensemble dataset
+
+```{r Ensemble, results='hide', warning=FALSE, error=FALSE, message=FALSE}
+# Databases in ensembl plant
+library(biomaRt)
+listMarts(host="https://plants.ensembl.org")
+
+# fungi-David
+#listMarts(host="https://ensembl.org")
+
+# List of species
+plant_ensembl <- useEnsembl(biomart="plants_mart", host ="plants.ensembl.org" )
+head(listDatasets(plant_ensembl))
+
+```
+
+### Extract Arabidopsis dataset
+
+```{r Ar_dataset, results='hide', warning=FALSE, error=FALSE, message=FALSE }
+
+athaliana_database <- useMart(biomart = "plants_mart", host = "plants.ensembl.org", dataset = "athaliana_eg_gene")
+head(listFilters(athaliana_database))
+head(listAttributes(athaliana_database))
+
+##Extract genes biotypes
+# Arabidopsis thaliana
+athaliana_biotype_genes <- getBM(c("ensembl_gene_id","gene_biotype"), mart=athaliana_database)
+
+unique(athaliana_biotype_genes$gene_biotype)
+
+```
+
+### Extract genes biotypes
+
+Here we extract the ID of the genes in the next cathegories: ncRNAs, snoRNAs, snRNAs, tRNA, rRNA, lncRNA, protein-coding, pre-miRNAs, etc.
+
+```{r Biotypes, results='hide', warning=FALSE, error=FALSE, message=FALSE }
+# Arabidopsis thaliana
+athaliana_biotype_genes <- getBM(c("ensembl_gene_id","gene_biotype"), mart=athaliana_database)
+
+unique(athaliana_biotype_genes$gene_biotype)
+```
+
+### GO terms analysis
+
+```{r GO terms, results='hide', warning=FALSE, error=FALSE, message=FALSE }
+#Obtain the GO terms registered
+library(topGO)
+#BiocManager::install("topGO") #in case you need to install the package
+# Extract GO terms
+At_GOgenes <- getBM(attributes=c('ensembl_gene_id', 'go_id'), mart=athaliana_database)
+
+#head(At_GOgenes)
+
+# We save the gene list in a .tsv file
+write.table(At_GOgenes, file = "./At_geneid2go.map",sep = "\t", row.names = FALSE, col.names = FALSE, quote = FALSE)
+```
+
+The function getBM filters the previous recolected data from Ensembl Plant with biomaRT. And the data has a list format to be processed by TopGO.
+
+### Conversion of Ensembl IDs to Entrez IDs and obtain Universe
+
+```{r Ensembl conversion }
+# > Universe
+#We need this to read it and then to be processed by TopGO
+At_geneID2GO <- readMappings("./At_geneid2go.map")
+str(head(At_geneID2GO))
+
+# Obtain names from Go genes 
+GO2geneID <- inverseList(At_geneID2GO)
+str(head(GO2geneID))
+
+# Modify the gene list to be processed by topGO
+At_geneNames <- names(At_geneID2GO) # universe
+head(At_geneNames)
+```
+
+### Obtain GO terms from DEG
+
+```{r GO from DEG, results='hide', warning=FALSE, error=FALSE, message=FALSE }
+
+#---------------### A) Binary matrix ---------------------------------
+# > Fe_deficiency
+At_gene.names.up.go <- unlist(strsplit(At_all_de_gene_names_UP, split = "|", fixed = TRUE))
+At_geneList.up <- factor(as.integer(At_geneNames %in% At_all_de_gene_names_UP))
+names(At_geneList.up) <- At_geneNames
+head(At_geneList.up)
+str(At_geneList.up)
+
+# > Control
+At_gene.names.down.go <- unlist(strsplit(At_all_de_gene_names_DOWN, split = "|", fixed = TRUE))
+At_geneList.down <- factor(as.integer(At_geneNames %in% At_all_de_gene_names_DOWN))
+names(At_geneList.down) <- At_geneNames
+head(At_geneList.down)
+
+#---------------### B) Obtain GO terms  ---------------------------------
+# > Fe_deficiency
+# With the list of identified genes we can generate a GO object.
+At_GOdata.up <- new("topGOdata", ontology = "BP", allGenes = At_geneList.up, 
+                    annot = annFUN.gene2GO, gene2GO= At_geneID2GO)
+At_GOdata.up
+
+# Number of genes
+numGenes(At_GOdata.up)
+
+# > Control
+At_GOdata.down <- new("topGOdata", ontology = "BP", allGenes = At_geneList.down, 
+                      annot = annFUN.gene2GO, gene2GO= At_geneID2GO)
+At_GOdata.down
+
+# Number of genes
+numGenes(At_GOdata.down)
+
+#------------### C) Fisher's test -------------------------------
+# > Air part
+At_resultsFisher.up <- runTest(At_GOdata.up, algorithm = "classic", statistic = "fisher")
+At_resultsFisher.up
+
+#> Roots
+At_resultsFisher.down <- runTest(At_GOdata.down, algorithm = "classic", statistic = "fisher")
+At_resultsFisher.down
+
+#Genes names
+At_Fe_def_a <- genes(At_GOdata.up)
+#At_shoot_a
+At_Control_a <- genes(At_GOdata.down)
+
+# Interesting genes sample
+At_Fe_def_selGenes <- sample(At_Fe_def_a, 10) 
+At_Fe_Def_gs <- geneScore(At_GOdata.up, whichGenes = At_Fe_def_selGenes)
+
+At_Control_selGenes <- sample(At_Control_a, 10) 
+At_Control_gs <- geneScore(At_GOdata.down, whichGenes = At_Control_selGenes)
+
+# > Sample of listed genes
+sg <- sigGenes(At_GOdata.up)
+str(sg)
+
+# Number of listed genes
+numSigGenes(At_GOdata.up) # 766 genes with GO terms in shoot
+numSigGenes(At_GOdata.down) # 676 genes with GO terms in root
+
+# ----------------Top 10 number of genes found in GO----------
+sel.terms <- sample(usedGO(At_GOdata.up), 10)
+num.ann.genes <- countGenesInTerm(At_GOdata.up, sel.terms) ## the number of annotated genes
+num.ann.genes #GO term with the genes that belongs to it 
+
+ann.genes <- genesInTerm(At_GOdata.up, sel.terms) ## get the annotations
+head(ann.genes)
+
+# statistics
+termStat(At_GOdata.up, sel.terms)
+
+```
+
+### Selection by pvalue from Fisher's test
+
+```{r Pvalue selection, results='hide', warning=FALSE, error=FALSE, message=FALSE }
+# > Go terms found in Fe_deficiency (up)
+# Summary of all results. 
+At_Fe_def.table <- GenTable(At_GOdata.up, classicFisher = At_resultsFisher.up,
+                          orderBy = "classicFisher", ranksOf = "classicFisher", topNodes = 10)
+
+# corregir de chr a num en classicFisher
+At_Fe_def.table$classicFisher <- as.numeric(At_Fe_def.table$classicFisher)
+
+# Filtrado
+At_Fe_defGO <- as.data.frame(At_Fe_def.table[At_Fe_def.table$classicFisher <= 0.05,])
+At_Fe_defGO
+str(At_Fe_defGO)
+dim(At_Fe_defGO)
+
+# >Go terms found in control (down)
+# Summary of all the results. 
+At_control.table <- GenTable(At_GOdata.down, classicFisher = At_resultsFisher.down,
+                             orderBy = "classicFisher", ranksOf = "classicFisher", topNodes = 10)
+
+
+showGroupDensity(At_GOdata.down, "GO:0010015", ranks = FALSE, rm.one = FALSE)
+
+# correct the chr to num in classicFisher
+At_control.table$classicFisher <- as.numeric(At_control.table$classicFisher)
+
+At_controlGO <- as.data.frame(At_control.table[At_control.table$classicFisher <= 0.05,])
+At_controlGO
+str(At_controlGO)
+dim(At_controlGO)
+```
+
+You can use topNodes to choose the number of global terms you need.
+
+### Graphs
+
+```{r GO graphs, results='hide', warning=FALSE, error=FALSE, message=FALSE }
+# Reduce information
+#Fe_deficiency
+At_Fe_def_visualplot <- At_Fe_defGO[,c(1,2,3,6)] #col ID, term, annotated and classicFisher
+head(At_Fe_def_visualplot)
+#dim(At_Fe_def_visualplot)
+
+#control
+At_control_visualplot <- At_controlGO[,c(1,2,3,6)]
+head(At_control_visualplot)
+#dim(At_control_visualplot)
+
+# Graph
+library(ggplot2)
+library(dplyr)
+
+#Convert chr to num
+At_Fe_def_visualplot$classicFisher <- as.numeric(At_Fe_def_visualplot$classicFisher)
+str(At_Fe_def_visualplot)
+At_Fe_def_visualplot$dex <- "Fe_def"
+  
+At_control_visualplot$classicFisher <- as.numeric(At_control_visualplot$classicFisher)
+str(At_control_visualplot)
+At_control_visualplot$dex <- "control"
+
+# join both Fe_def and control data
+At_treatment_visualplot <- rbind(At_Fe_def_visualplot, At_control_visualplot)
+colnames(At_treatment_visualplot) <- c("GO.ID", "Term", "Annotated", "padjust", "dex")
+# Order
+At_treatment_visualplot <-At_treatment_visualplot[order(At_treatment_visualplot$Annotated, decreasing = T), ]
+
+# Fig 1- Our first steps
+At_treatment_visualplot %>% ggplot(aes(x=dex, y = Term, size= Annotated, color =padjust)) + geom_point(alpha=1.0) +
+  scale_color_gradient(low="blue", high="red") +
+  labs(title = "Enriquecimiento de terminos GO (all)", #GO Biological processes
+       x = "A.thaliana", y = "",
+       caption = 'Cut-off of padj=0.05') + # add x y y label
+  theme_light() +
+  theme(text = element_text(size=12, family="sans"), 
+        axis.title.x = element_text(face = "italic",  family="sans")) # control label x
+
+# classicFisher = p.adjust
+# Annotated = Count
+
+# Fig 2 - Number of genes per GO term
+At_treatment_visualplot %>% ggplot(aes(x=Annotated, y = reorder(Term, Annotated), fill=dex)) + 
+  geom_bar(stat = "identity") +
+  geom_text(
+    aes(label = Annotated), # Fix info in numbers
+    color = "black",
+    size = 4,
+    hjust=0.5,
+    position = position_dodge(0.9)) +
+  scale_fill_manual(values=c("pink", "purple")) +#fill colors, pink and purple (root and shoot)
+  facet_wrap(~dex, scales="free") +
+  labs(title = "Enrichment of GO terms (all)", #GO Biological processes
+       x = "A.thaliana", y = "",
+       caption = 'Cut-off of padj=0.05') + # add x and y label
+  theme_classic()+
+  theme(text = element_text(size=12, family="sans"), 
+        axis.title.x = element_text(face = "italic",  family="sans"),# control label x
+        legend.position = "none", 
+        legend.title = element_blank(), 
+        strip.background = element_blank()) 
+
+```
+
+Iron: is a nutrient essential for photosynthesis, that has energy as output and in its ausence the plant has to perform activities to obtain energy.
+
+If we compare the control samples versus the Fe_def ones we can observe that there is a difference between the type of processes that are taking place. It makes sense that in the deficiency of a nutrient as iron, the plant carries out essential activities for its survivence related to the metabolic path.
+
+# Discussion
+
+## Comparing our results with the original paper
+
+In the BioProject paper, genes of Fe homeostatic regulation were presented but they do not agree with our results. However, our resultant genes have functions that match the biological processes obtained in the paper. Some examples are genes related to metabolism and others expressed in the plant roots (AT4G26270, AT1G72090, AT1G45249). We can assign the difference in results to the higher analytic processes done by the original paper and due to the duplication of reads observed in our quality analysis.
+
+## Comparing out results with related papers
+
+In some papers there was found that the iron deficiency has an impact in the gene regulation. This is consistent with our graphs results in which we could observe differences between the control and the Fe deficiency samples gene expression.
+
+Literature says that URI transcription factor has an important role in metabolism where it regulates FIT. Although we did not find the genes that regulate URI or FIT, we obtained resultant genes related to metabolic pathways (previously mentioned).
+
+Some proteins that interact with URI are related to embryo development, the relation we found with our resultant data are two genes within this process (AT1G17520, AT3G63420).
+
+In the same way, IRT1 was referred to as a protein regulated by FIT, IRT1 codes for enzymes involved in metabolic pathways as well as oxidative stress (AT3G27740).
+
+Proteins in spots with potential posttranscriptional regulation showed enrichment in catalytic activity just as some of the GO terms in the last plot (AT2G13540).
+
+
+# Bibliography
+
+
+- [https://www.arabidopsis.org/](https://www.arabidopsis.org/)
+
+- (Kim et al., 2019)
+Kim, S. A., LaCroix, I. S., Gerber, S. A., & Guerinot, M. L. (2019). The iron deficiency response in Arabidopsis thaliana requires the phosphorylated transcription factor URI. Proceedings of the National Academy of Sciences of the United States of America, 116(50), 24933–24942. (https://doi.org/10.1073/pnas.1916892116)
+
+- Li, W., Lin, W. D., Ray, P., Lan, P., & Schmidt, W. (2013). Genome-wide detection of condition-sensitive alternative splicing in Arabidopsis roots. Plant physiology, 162(3), 1750–1763. (https://doi.org/10.1104/pp.113.217778)
+
+- (Mai et al., 2015)
+Mai, H.-J., Lindermayr, C., von Toerne, C., Fink-Straube, C., Durner, J., & Bauer, P. (2015). Iron and FER-LIKE IRON DEFICIENCY-INDUCED TRANSCRIPTION FACTOR-dependent regulation of proteins and genes in Arabidopsis thaliana roots. Proteomics, 15(17), 3030–3047. (https://doi.org/10.1002/pmic.201400351)
+
+- Mai HJ, Pateyron S, Bauer P. Iron homeostasis in Arabidopsis thaliana: transcriptomic analyses reveal novel FIT-regulated genes, iron deficiency marker genes and functional gene networks. BMC Plant Biol. 2016 Oct 3;16(1):211. doi: 10.1186/s12870-016-0899-9. PMID: 27716045; PMCID: PMC5048462.
+
+- National Center for Biotechnology Information (NCBI)[Internet]. Bethesda (MD): National Library of Medicine (US), National Center for Biotechnology Information;  – [cited 2023 Feb 28. Available from: (https://www.ncbi.nlm.nih.gov/)
+
+
+
+
+
+
+
+
+
+
+
+
+
